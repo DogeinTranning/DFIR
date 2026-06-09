@@ -1,0 +1,333 @@
+# Shell Items, LNK Files, Jump Lists, and ShellBags
+
+## Shell Item
+
+Shell Item is a data object in Windows that stores information used to access another file (e.g., LNK files). It essentially acts like a pointer to the target file or folder.
+
+### Key Shell Item Attributes
+
+- **Type of Drive Target Is On**
+  - Fixed, removable, or network drives
+- **Path of Target File**
+  - Includes full file path, drive letter, volume label, serial number, and for network files, server share path
+- **Target Metadata**
+  - File timestamps
+  - File size
+  - MFT record number and sequence
+
+
+## LNK File
+
+- `Header`
+  - Contains target file info: timestamps, size, attributes
+  - Identifies which sections are present in the file
+- `Target PIDL (optional)`
+  - Stands for Pointer to an Item ID List
+  - Contains the full path to the target and timestamps for each item in the path
+  - Also known as LinkTargetIDList or TargetID
+- `LinkInfo (optional)`
+  - Stores volume and path info
+    - Local: drive type, volume serial, volume label
+    - Remote: share path & device name (in CommonNetworkRelativeLink)
+- `StringData (optional)`
+  - **Up to five strings**
+    - Target name
+    - Relative path
+    - Working directory
+    - Command-line arguments
+    - Icon location
+- `ExtraData (optional)`
+  - **Includes**
+    - PropertyStore: arbitrary metadata
+    - TrackerInformation: used for tracking files across systems
+
+- Even if users don’t create them, Windows automatically creates LNK (shortcut) files when users open files or folders.
+- LNK files are placed in the “Recent” folders and serve as evidence of user interaction with files or folders.
+- A LNK file is created for both the target file and its parent folder, even if opened from external devices like USB drives.
+- Note: Copying files/folders does not generate .lnk entries.
+- **Windows 7+**
+  - `C:\Users\<user>\AppData\Roaming\Microsoft\Windows\Recent`
+  - `C:\Users\<user>\AppData\Roaming\Microsoft\Office\Recent`
+- **Windows XP**
+  - `C:\Documents and Settings\<username>\Recent`
+- **Each LNK file contains**
+  - Full path to the target file
+  - Timestamps
+  - Drive type, volume label, and serial number
+  - Network share info (NetBIOS name, MAC address)
+- Timestamps
+  - Creation time of a LNK file = First time a file with that exact name was opened (any location).
+  - Modification time of the LNK = Last time that named file was opened.
+  - These timestamps help forensic analysts track file access history within user profiles.
+  - **Key Uses**
+    - LNK files can reveal previously opened files that may no longer exist (e.g., deleted or wiped).
+    - Even if the file is gone, the LNK remains as evidence that it existe
+- Behavior
+  - Folder Creation
+    - **When a new folder is made, Windows now creates .lnk entries for**
+      - The folder
+      - Its parent and grandparent folders — before any user interaction occurs.
+  - File-Type-Based LNK Limits
+    - Newer Windows 10 builds limit .lnk storage per file type (usually 20 per extension; folders up to 30).
+    - This encourages diversity in the Recent folder and mimics RecentDocs registry behavior.
+  - Multiple LNKs for the Same Folder
+    - Windows 10 may generate new .lnk files (e.g., with a (#) suffix) for the same folder, instead of updating the original.
+    - This helps track timestamps across different locations (e.g., local vs USB copy).
+  - File Extensions in LNK Names
+    - Some Win10 builds append the original file extension to the .lnk filename (e.g., screenshot.png.lnk).
+    - **Triggered when “Hide extensions for known file types” is disabled in**
+      - `NTUSER\Software\Microsoft\Windows\`
+      - `CurrentVersion\Explorer\Advanced\HideFileExt = 0`
+- `LECmd.exe`
+  - decode and extract all metadata from Windows .lnk (shortcut) files, including shell items.
+  - **Parse a Single File**
+    - `LECmd.exe -f guided-cash-flow-statement.lnk`
+  - **Parse a Directory Recursively and Output CSV**
+    - `LECmd.exe -d "C:\Users\<User>\AppData\Roaming\Microsoft\Windows\Recent" --csv "G:\cases" -q`
+
+- URL-based LNK files
+  - Starting with Windows 8+, .lnk files in the Recent folder began tracking more than just local files—they can now reference websites.
+  - **Key Characteristics**
+    - The full URL, including all query parameters, is embedded in the .lnk filename.
+    - **Example**
+      - `http://example.com/page?mac=...&ip=...&userAgent=...&TunnelId=... .lnk`
+  - **LNK Creation Triggers (documented)**
+    - Website accessed through the Run dialog
+    - Website opened via a Windows search
+    - Website clicked via a link inside another application
+  - **Shell items also track interactions with Control Panel applets, logged in both**
+    - Recent folder
+    - ShellBags artifacts
+  - **Useful for proving user behavior like**
+    - Time zone changes
+    - Disabling Windows Defender
+    - Turning off Windows Update
+- Attacks and Malware Persistence
+  - Malicious Uses of LNK Files
+    - Used to launch executables, often outside of the Recent folder.
+    - **Commonly abused in**
+      - Email attachments
+      - Drive-by downloads
+      - Office macros
+  - They mimic benign files (e.g., PDF icon, fake filenames) but execute malicious scripts or binaries.
+  - Security Evasion and Persistence
+    - **Highly flexible structure allows LNKs to**
+      - Display friendly-looking info
+      - Mask complex/obfuscated paths or commands
+    - **Can be placed in**
+      - `%UserProfile%\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup`
+  - → Automatically launches on user login (classic persistence).
+- Analysis & Detection Tips
+  - GUI properties show only 260 characters, but up to 4096 characters may be embedded.
+  - **Attackers use**
+    - Padding, newlines, or special characters to hide payloads
+    - PowerShell, .bat, or .exe commands hidden in arguments
+  - Example: A file named LabResults.pdf.lnk might run a PowerShell reverse shell while appearing harmless.
+  - **Use LECmd to**
+    - Analyze shell item components
+    - Identify flags like “HasArguments”, “Hidden”, and mismatched fields
+- Associated Malware Families
+  - **LNK-based payloads have been used by**
+    - Emotet, Qakbot, IcedID, BazarLoader, Bumblebee
+
+
+## Jump Lists
+
+- let users quickly access frequently used files, links, and actions via the taskbar.
+- Appear when right-clicking on an application's icon.
+- **Jump Lists are application-specific and may include**
+  - Docs, RDP sessions, browser tabs, virtual machines, etc.
+  - Items are often stored as LNK files behind the scenes.
+- **Jump Lists are a powerful timeline tool**
+  - Contain data that goes further back than RecentDocs or Recent folder .lnk files.
+  - Retain info even if original files are deleted.
+  - Each entry has an embedded LNK file with full shell metadata (timestamps, volume info, paths).
+- **This makes them invaluable for**
+  - Reconstructing user activity
+  - Tracking interactions with long-lost files
+- Cfiguration & Management
+  - Enabled by default for all users.
+  - **Can be turned off via**
+    - Control Panel > Personalization > Start > “Show recently opened items in Jump Lists on Start or the taskbar”
+    - Disabling this clears both Automatic and Custom Jump Lists.
+- Components
+  - **Destinations**
+    - Represent files, folders, websites, or items recently/frequently used.
+    - Appear under Recent, Frequent, or custom categories.
+    - User-controlled – can be pinned or removed.
+    - Think of them as nouns – "what" you opened or accessed.
+  - **Tasks**
+    - Represent actions within the app (e.g., open new tab, print, compose).
+    - Automatically generated based on the app’s design.
+    - Cannot be pinned or removed by users.
+    - Think of them as verbs – "what" you do with the app.
+  - Types of Jump Lists
+    - Automatic Jump Lists
+      - Created by Windows, based on user activity.
+      - Appear in the same Recent location as LNK files.
+      - **Contains**
+        - Full .lnk metadata (timestamps, paths, volume info)
+        - "DestList" index file = tracks MRU order + last-used timestamp
+      - Often reveals older activity than the Recent folder or registry artifacts.
+      - `C:\Users\[Profile]\AppData\Roaming\Microsoft\Windows\Recent\AutomaticDestinations`
+      - Files are named using a 16-digit AppID followed by .automaticDestinations-ms.
+        - Each AppID maps to a specific application (e.g., Word, Chrome).
+
+    - Custom Jump Lists
+      - Defined by application developers.
+      - Allow additional features beyond the default list.
+      - Simpler format: one header + multiple .lnk entries strung together.
+      - Each .lnk entry contains standard metadata, but no cross-referenced metadata is present.
+      - Watch out: Target Timestamp may point to browser executables, not web content. Use path for validation.
+      - **Custom Jump Lists are stored at**
+        - `C:\Users\[Profile]\AppData\Roaming\Microsoft\Windows\Recent\CustomDestinations`
+      - Files follow the same AppID-based naming as Automatic Jump Lists.
+      - `Each file ends with: .customDestinations-ms`
+      - **Intended to track user-designated or app-defined important items, such as**
+        - Added to Favorites
+        - Tracked history from a web browser
+- AppIDs
+  - Each Jump List (Automatic or Custom) is named using a unique AppID (Application Identifier).
+  - **Why AppIDs Are Used**
+    - Prevents conflict between similar apps (e.g., Word 2013 vs. Word 365).
+    - Ensures the Jump List is unique per app install.
+    - **However, this also means**
+      - AppIDs aren't universal or consistent across systems.
+      - Some applications may change AppID on update or install in non-standard paths, making ID resolution tricky.
+  - **A Jump List is strong evidence that an app**
+    - Existed
+    - Ran at least once
+  - Even after uninstallation, Jump Lists may remain.
+  - **Timestamps in Automatic Jump Lists map to**
+    - Creation = first item added (first use)
+    - Modification = most recent use
+  - Custom Jump Lists lack this clarity, but still suggest the app was once present.
+- `JLECmd – JumpList Explorer Command Line`
+  - To decode both Automatic and Custom Jump Lists (*.automaticDestinations-ms, *.customDestinations-ms) into human-readable form.
+
+- Behavioral Enhancements in Jump Lists (Windows 10/11)
+  - Quick Access Jump List (File Explorer)
+    - New with Windows 10.
+    - Logs recent files, folders, and pinned items.
+    - **Very broad in scope, but**
+      - May lack detailed .lnk shell item info.
+      - Should be cross-referenced with app-specific Jump Lists for accuracy.
+  - New File Creation Logging
+    - **When a file is created in a new location, an entry is added to both**
+      - The Quick Access Jump List
+      - The app-specific Jump List (sometimes)
+    - **Use timestamp matching**
+      - If Target Creation = DestList Last Modified → likely newly created.
+      - If timestamps differ → likely opened or reused.
+  - Folder Copy Tracking
+    - **Entries now created for folder copy actions, including**
+      - Local and removable drive transfers
+      - Single and batch folder copies
+    - **Timestamps can reveal**
+      - If a folder was created or simply opened
+      - Helps detect copy events with time and destination metadata
+  - Search Activity (Microsoft Edge Jump List)
+    - **Entries log taskbar search queries, particularly when**
+      - The “Best match” is clicked
+    - **Logged in the Edge Jump List, often with**
+      - Search query as a URL parameter
+      - Microsoft.Windows.Cortana context in the launch line
+    - **Ex**
+      - microsoft-edge:?launchContext1=Microsoft.Windows.Cortana...
+      - https://www.bing.com/search?q=bitlocker+to+go
+
+
+## ShellBags
+
+- ShellBags are registry keys that track user folder interaction and GUI display preferences in Windows Explorer.
+- **They store details like**
+  - View mode (icons, details, etc.)
+  - Sort order, folder size, and
+  - Timestamps indicating when a folder was last accessed or modified via the GUI.
+- **Proves interaction with folders, even if**
+  - The folder has been deleted
+  - It's on a removable, encrypted, or cloud-mounted drive
+- **Useful for**
+  - Data exfiltration investigations
+  - Tracking mounted drives or archives
+  - Enumerating content from long-gone or hidden directories
+- Behavioral Updates in Windows 11 (22H2)
+  - Support expanded to include folders created from archive formats (e.g., .zip, .rar, .tar, .gz)
+  - Even non-traditional folders (e.g., Control Panel applets, mobile devices, network paths) can be tracked.
+
+- ShellBag Storage Locations
+  - **Windows Vista / 7 / 10 / 11**
+    - `NTUSER.DAT\Software\Microsoft\Windows\Shell\BagMRU`
+    - `NTUSER.DAT\Software\Microsoft\Windows\Shell\Bags`
+    - `USRCLASS.DAT\Local Settings\Software\Microsoft\Windows\Shell\BagMRU`
+    - `USRCLASS.DAT\Local Settings\Software\Microsoft\Windows\Shell\Bags`
+  - **Windows XP**
+    - **Same NTUSER.DAT locations as above, plus**
+      - `ShellNoRoam\Bags and ShellNoRoam\BagMRU`
+      - `Explorer\StreamMRU`
+- Timestamps and MAC Times
+  - ShellBags retain Last Written registry timestamp + embedded MAC timestamps from target folder metadata.
+  - **Can help reconstruct when a folder was**
+    - First accessed
+    - Last modified
+    - Deleted or moved
+- ShellBags Registry Structure
+  - **Located in the USRCLASS.DAT hive, ShellBags consist primarily of two components**
+  - BagMRU
+    - Mirrors folder structure
+    - Each visited folder becomes a sub-key in BagMRU
+    - Stores the hierarchical path and MRU (Most Recently Used) order
+  - Bags
+    - Contains folder-specific settings for entries in BagMRU
+      - E.g., view mode, size, sort order, etc.
+    - Each Bags subkey corresponds to an ID in BagMRU
+  - Registry Timestamps
+    - Every registry key includes a “Last Write Time”
+    - **These are crucial for forensics and serve as**
+      - First Interacted Time
+      - Last Interacted Time
+    - This timing data helps reconstruct when a user accessed, viewed, or modified folders, even if those folders are now deleted.
+- ShellBags Explorer
+  - ShellBags Explorer (SBE) is a powerful forensic tool that automates the complex task of parsing and analyzing ShellBags artifacts
+- Timestamps
+  - **ShellBags rely on the Windows Registry’s "Last Write Time", but there’s a challenge**
+    - Registry keys have one timestamp.
+    - Registry values (which hold folder names in ShellBags) do not have their own timestamps.
+  - This limitation affects how timestamps are assigned in forensic analysis.
+  - MRU Position Logic in BagMRU
+    - **Each BagMRU key maintains**
+      - A list of child folders (0, 1, 2, etc.)
+      - A Most Recently Used (MRU) list that ranks them
+    - Only the MRU Position #0 (most recent) is assigned the Last Write Time of the parent key.
+    - This time = Last Interacted Time for that folder
+    - **Limitation**
+      - If a folder has multiple children, only the most recently accessed one gets a timestamp.
+      - Others are not timestamped, making their timeline analysis more difficult.
+- ShellBags analysis
+  - Simplified Focus Points
+    - Identify folders/items interacted with by the user.
+    - **Filter based on**
+      - `Drive letters (e.g., removable media E:\)`
+      - Sensitive folder names (e.g., Finance, HR)
+      - Folders on network shares
+    - In theft cases, focus on drives/folders linked to removable devices.
+    - In intrusion cases, focus on sensitive or cloud-connected locations.
+  - Using Timestamps Effectively
+    - **First Interacted**
+      - Useful for spotting when a folder was first accessed.
+      - Great for detecting new folder interactions.
+    - **Last Interacted**
+      - Helps establish if a folder was recently accessed.
+    - **Created On (from shell item metadata)**
+      - Indicates when the folder was originally created, not accessed.
+    - Reminder: Not all folders will have all timestamps due to registry limitations!
+  - Exotic Items and Special Cases
+    - **ShellBags can also record**
+      - Cloud storage libraries (e.g., OneDrive, Box Sync)
+      - Mobile devices (recorded as MTP devices)
+      - Archive contents (e.g., Zip files browsed like folders)
+    - **When analyzing, include pseudo-folders like**
+      - “File”
+      - “Zip File Contents”
+    - → This ensures a complete view of user activity, even inside compressed files or synced storage.
+
